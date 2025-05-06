@@ -2,67 +2,74 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = 'my-wordpress'  // Nombre de la imagen que subiremos
-        IMAGE_TAG = 'latest'         // Etiqueta de la imagen
+        IMAGE_NAME = 'my-wordpress'
+        IMAGE_TAG = 'latest'
         DOCKER_REGISTRY = 'docker.io'
-        DOCKER_USER = 'mzaygar'      // Tu usuario de Docker Hub
-        DOCKER_PASS = credentials('docker-password')  // Credenciales de Docker Hub
-        COSIGN_KEY = credentials('cosign-key')        // Clave de Cosign
-        WORDPRESS_IMAGE = 'wordpress:latest'  // Usamos la imagen más reciente de Docker Hub
+        DOCKER_USER = 'mzaygar'
+        DOCKER_PASS = credentials('docker-password')
+        COSIGN_KEY = credentials('cosign-key')
+        WORDPRESS_IMAGE = 'wordpress:latest'
     }
 
     stages {
+        stage('Install Tools') {
+            steps {
+                script {
+                    sh '''
+                        echo "[*] Instalando Docker, Trivy y Cosign..."
+                        apt-get update && apt-get install -y docker.io curl git wget
+
+                        # Instalar Trivy
+                        wget -q https://github.com/aquasecurity/trivy/releases/download/v0.49.1/trivy_0.49.1_Linux-64bit.deb
+                        dpkg -i trivy_0.49.1_Linux-64bit.deb
+                        rm -f trivy_0.49.1_Linux-64bit.deb
+
+                        # Instalar Cosign
+                        wget -q https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64
+                        chmod +x cosign-linux-amd64
+                        mv cosign-linux-amd64 /usr/local/bin/cosign
+                    '''
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
-                // Clonamos el repositorio de GitHub
                 git branch: 'main', url: 'https://github.com/SuperDebian/TFM_Jenkins.git'
             }
         }
 
         stage('Pull WordPress Image') {
             steps {
-                script {
-                    // Descargamos la imagen más reciente de WordPress
-                    sh "docker pull ${WORDPRESS_IMAGE}"
-                }
+                sh "docker pull ${WORDPRESS_IMAGE}"
             }
         }
 
         stage('Scan with Trivy') {
             steps {
-                script {
-                    // Escanear la imagen de WordPress con Trivy para vulnerabilidades
-                    sh "trivy image ${WORDPRESS_IMAGE}"
-                }
+                sh "trivy image ${WORDPRESS_IMAGE}"
             }
         }
 
         stage('Sign Image with Cosign') {
             steps {
-                script {
-                    // Firmar la imagen de Docker con Cosign
-                    sh "cosign sign --key ${COSIGN_KEY} ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
-                }
+                sh "cosign sign --key ${COSIGN_KEY} ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                script {
-                    // Iniciar sesión en Docker Hub
-                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
-
-                    // Subir la imagen de WordPress a Docker Hub
-                    sh "docker tag ${WORDPRESS_IMAGE} ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
-                    sh "docker push ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
-                }
+                sh """
+                    echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+                    docker tag ${WORDPRESS_IMAGE} ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                """
             }
         }
     }
 
     post {
         always {
-            // Limpiar imágenes Docker locales para no llenar espacio
             sh 'docker system prune -f'
         }
     }
