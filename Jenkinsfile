@@ -6,22 +6,16 @@ pipeline {
         IMAGE_TAG = 'latest'
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_USER = 'mzaygar'
-        DOCKER_PASS = credentials('docker-password')  // Asegúrate de que la credencial esté bien configurada
-        COSIGN_KEY = credentials('cosign-key')  // Asegúrate de que la credencial esté bien configurada
+        DOCKER_PASS = credentials('docker-password')
+        COSIGN_KEY = credentials('cosign-key')
         WORDPRESS_IMAGE = 'wordpress:latest'
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: 'https://github.com/SuperDebian/TFM_Jenkins.git'
-            }
-        }
-
         stage('Pull WordPress Image') {
             steps {
                 script {
-                    // Usar Docker para obtener la imagen de WordPress
+                    // Obtener la imagen de WordPress
                     sh "docker pull ${WORDPRESS_IMAGE}"
                 }
             }
