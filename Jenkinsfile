@@ -15,7 +15,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 // Clonamos el repositorio de GitHub
-                git 'https://github.com/SuperDebian/TFM_Jenkins.git'
+                git branch: 'main', url: 'https://github.com/SuperDebian/TFM_Jenkins.git'
             }
         }
 
