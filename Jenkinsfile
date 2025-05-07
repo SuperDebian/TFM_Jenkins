@@ -13,6 +13,29 @@ pipeline {
             }
         }
 
+        stage('Verificar acceso a Docker') {
+            steps {
+                script {
+                    // Comprobar si Docker está disponible
+                    def dockerSocket = '/var/run/docker.sock'
+                    def dockerGroup = 'docker'
+
+                    // Verificar si el socket de Docker existe
+                    if (fileExists(dockerSocket)) {
+                        echo "Docker socket encontrado."
+                    } else {
+                        error "Docker socket no encontrado. Asegúrate de que Docker esté instalado y en ejecución."
+                    }
+
+                    // Intentar agregar el usuario de Jenkins al grupo Docker (esto solo funcionará si Jenkins tiene permisos para modificar grupos)
+                    sh """
+                        sudo usermod -aG $dockerGroup jenkins
+                        sudo systemctl restart jenkins
+                    """
+                }
+            }
+        }
+
         stage('Obtener Digest') {
             steps {
                 script {
