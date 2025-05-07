@@ -85,7 +85,7 @@ pipeline {
                 retry(3) {
                     sh 'helm repo add falcosecurity https://falcosecurity.github.io/charts'
                     sh 'helm repo update'
-                    sh 'helm install falco falcosecurity/falco --debug'
+                    sh 'helm install --replace falco --namespace falco --create-namespace --set tty=true falcosecurity/falco'
                 }
             }
         }
@@ -112,7 +112,7 @@ pipeline {
             }
         }
 
-        // Copiar logs
+        // Copiar logs a carpeta del servidor
         stage('Copiar logs a carpeta del servidor') {
             steps {
                 sh "cp -r ${LOG_DIR} /var/logs/jenkins_logs/"
