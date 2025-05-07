@@ -4,6 +4,8 @@ pipeline {
     environment {
         IMAGE = "mzaygar/apache2:latest"
         LOG_DIR = "scan_logs"
+        FALCO_IMAGE = "falcosecurity/falco:latest"  // Imagen Docker para Falco
+        FALCO_CONTAINER = "falco-container"  // Nombre del contenedor de Falco
     }
 
     stages {
@@ -76,34 +78,20 @@ pipeline {
             }
         }
 
-        stage('Iniciar Minikube con Docker') {
-            steps {
-                sh '''
-                    minikube start --driver=docker
-                    kubectl config use-context minikube
-                '''
-            }
-        }
-
-        stage('Instalar Falco via Helm') {
+        // Cambiar la instalación de Falco a Docker
+        stage('Instalar Falco con Docker') {
             steps {
                 retry(3) {
                     sh '''
-                        helm uninstall falco --namespace falco || true
-                        helm repo add falcosecurity https://falcosecurity.github.io/charts || true
-                        helm repo update
-                        helm install falco --namespace falco --create-namespace --set tty=true --insecure-skip-tls-verify falcosecurity/falco
+                        docker rm -f $FALCO_CONTAINER || true
+                        docker pull $FALCO_IMAGE
+                        docker run -d --name $FALCO_CONTAINER --privileged --pid host --net host \
+                            --volume /var/run/docker.sock:/var/run/docker.sock \
+                            --volume /proc:/host/proc \
+                            --volume /sys:/host/sys \
+                            $FALCO_IMAGE
                     '''
                 }
-            }
-        }
-
-        stage('Esperar que Falco esté listo') {
-            steps {
-                sh '''
-                    echo "Esperando que Falco esté listo..."
-                    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=falco -n falco --timeout=90s || true
-                '''
             }
         }
 
@@ -120,7 +108,7 @@ pipeline {
             steps {
                 sh '''
                     echo "Obteniendo logs de Falco..."
-                    kubectl logs -l app.kubernetes.io/name=falco -n falco -c falco --tail=100 > ${LOG_DIR}/falco.log || echo "No se encontraron logs."
+                    docker logs $FALCO_CONTAINER > ${LOG_DIR}/falco.log || echo "No se encontraron logs."
                     grep Warning ${LOG_DIR}/falco.log || echo "No se encontraron alertas tipo Warning."
                 '''
             }
