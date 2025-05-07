@@ -7,12 +7,14 @@ pipeline {
     }
 
     stages {
+        // Etapa de preparar logs
         stage('Preparar logs') {
             steps {
                 sh 'mkdir -p ${LOG_DIR}'
             }
         }
 
+        // Verificar si Docker está accesible
         stage('Verificar acceso a Docker') {
             steps {
                 script {
@@ -26,6 +28,7 @@ pipeline {
             }
         }
 
+        // Obtener digest de la imagen Docker
         stage('Obtener Digest') {
             steps {
                 script {
@@ -37,6 +40,7 @@ pipeline {
             }
         }
 
+        // Escanear la imagen con Trivy
         stage('Escanear con Trivy') {
             steps {
                 sh """
@@ -45,6 +49,7 @@ pipeline {
             }
         }
 
+        // Firmar y verificar imagen con Cosign
         stage('Firmar y Verificar con Cosign') {
             environment {
                 CONTRASENA_COSIGN = credentials('COSIGN_PASSWORD')
@@ -63,6 +68,7 @@ pipeline {
             }
         }
 
+        // Desplegar imagen Docker
         stage('Desplegar Imagen en Docker') {
             steps {
                 sh '''
@@ -73,15 +79,18 @@ pipeline {
             }
         }
 
-        // Etapas de Falco
+        // Instalar Falco via Helm
         stage('Instalar Falco via Helm') {
             steps {
-                sh 'helm repo add falcosecurity https://falcosecurity.github.io/charts'
-                sh 'helm repo update'
-                sh 'helm install falco falcosecurity/falco'
+                retry(3) {
+                    sh 'helm repo add falcosecurity https://falcosecurity.github.io/charts'
+                    sh 'helm repo update'
+                    sh 'helm install falco falcosecurity/falco --debug'
+                }
             }
         }
 
+        // Simular alerta Falco
         stage('Simular Alerta Falco') {
             steps {
                 sh 'echo "Simulando comportamiento sospechoso..."'
@@ -89,33 +98,21 @@ pipeline {
             }
         }
 
+        // Revisar logs de Falco
         stage('Revisar Logs Falco') {
             steps {
                 sh 'kubectl logs -l app=falco -n falco --tail=100'
             }
         }
 
-        stage('Simular Alerta de Seguridad') {
-            steps {
-                sh '''
-                    echo "Simulando comportamiento sospechoso en contenedor..."
-                    docker exec apache2-container sh -c "touch /bin/evil_script.sh || true"
-                '''
-            }
-        }
-
-        stage('Revisar Logs del Contenedor') {
-            steps {
-                sh 'docker logs apache2-container --tail 100 | tee ${LOG_DIR}/docker_logs.log'
-            }
-        }
-
+        // Archivar logs
         stage('Archivar Logs en Jenkins') {
             steps {
                 archiveArtifacts artifacts: "${LOG_DIR}/*.log", fingerprint: true
             }
         }
 
+        // Copiar logs
         stage('Copiar logs a carpeta del servidor') {
             steps {
                 sh "cp -r ${LOG_DIR} /var/logs/jenkins_logs/"
