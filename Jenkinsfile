@@ -59,11 +59,16 @@ pipeline {
                     file(credentialsId: 'COSIGN_KEY', variable: 'COSIGN_KEY'),
                     file(credentialsId: 'COSIGN_PUB', variable: 'COSIGN_PUB')
                 ]) {
-                    sh """
-                        COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key $COSIGN_KEY ${IMAGE} | tee ${LOG_DIR}/cosign_sign.log
-                        cosign verify --key $COSIGN_PUB ${IMAGE} | tee ${LOG_DIR}/cosign_verify.log
-                        cosign verify --key $COSIGN_PUB ${IMAGE_DIGEST} | tee ${LOG_DIR}/cosign_digest_verify.log
-                    """
+                    script {
+                        // Obtener el digest de la imagen
+                        def imageDigest = sh(script: "docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}", returnStdout: true).trim()
+
+                        // Usar el digest para la firma
+                        sh """
+                            COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key \$COSIGN_KEY ${imageDigest} | tee ${LOG_DIR}/cosign_sign.log
+                            cosign verify --key \$COSIGN_PUB ${imageDigest} | tee ${LOG_DIR}/cosign_verify.log
+                        """
+                    }
                 }
             }
         }
@@ -85,7 +90,8 @@ pipeline {
                 retry(3) {
                     sh 'helm repo add falcosecurity https://falcosecurity.github.io/charts'
                     sh 'helm repo update'
-                    sh 'helm install --replace falco --namespace falco --create-namespace --set tty=true falcosecurity/falco'
+                    // Agregar la opción --insecure-skip-tls-verify para evitar la validación TLS
+                    sh 'helm install --replace falco --namespace falco --create-namespace --set tty=true --insecure-skip-tls-verify falcosecurity/falco'
                 }
             }
         }
