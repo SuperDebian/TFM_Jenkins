@@ -4,8 +4,6 @@ pipeline {
     environment {
         IMAGE = "mzaygar/apache2:latest"
         LOG_DIR = "scan_logs"
-        FALCO_IMAGE = "falcosecurity/falco:latest"  // Imagen Docker para Falco
-        FALCO_CONTAINER = "falco-container"  // Nombre del contenedor de Falco
     }
 
     stages {
@@ -74,42 +72,6 @@ pipeline {
                     docker rm -f apache2-container || true
                     docker pull $IMAGE_DIGEST
                     docker run -d --name apache2-container -p 8081:80 $IMAGE_DIGEST
-                '''
-            }
-        }
-
-        // Cambiar la instalación de Falco a Docker
-        stage('Instalar Falco con Docker') {
-            steps {
-                retry(3) {
-                    sh '''
-                        docker rm -f $FALCO_CONTAINER || true
-                        docker pull $FALCO_IMAGE
-                        docker run -d --name $FALCO_CONTAINER --privileged --pid host --net host \
-                            --volume /var/run/docker.sock:/var/run/docker.sock \
-                            --volume /proc:/host/proc \
-                            --volume /sys:/host/sys \
-                            $FALCO_IMAGE
-                    '''
-                }
-            }
-        }
-
-        stage('Simular Alerta Falco') {
-            steps {
-                sh '''
-                    echo "Simulando comportamiento sospechoso..."
-                    sudo touch /bin/evil_script.sh || true
-                '''
-            }
-        }
-
-        stage('Revisar Logs Falco') {
-            steps {
-                sh '''
-                    echo "Obteniendo logs de Falco..."
-                    docker logs $FALCO_CONTAINER > ${LOG_DIR}/falco.log || echo "No se encontraron logs."
-                    grep Warning ${LOG_DIR}/falco.log || echo "No se encontraron alertas tipo Warning."
                 '''
             }
         }
