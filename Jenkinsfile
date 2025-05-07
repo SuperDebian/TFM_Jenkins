@@ -30,7 +30,6 @@ pipeline {
                     // Intentar agregar el usuario de Jenkins al grupo Docker (esto solo funcionará si Jenkins tiene permisos para modificar grupos)
                     sh """
                         sudo usermod -aG $dockerGroup jenkins
-                        sudo systemctl restart jenkins
                     """
                 }
             }
