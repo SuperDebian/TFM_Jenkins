@@ -47,7 +47,7 @@ pipeline {
 
         stage('Firmar y Verificar con Cosign') {
             environment {
-                COSIGN_PASSWORD = credentials('CONTRASENA_COSIGN')
+                CONTRASENA_COSIGN = credentials('COSIGN_PASSWORD')
             }
             steps {
                 withCredentials([
@@ -55,7 +55,7 @@ pipeline {
                     file(credentialsId: 'COSIGN_PUB_FILE', variable: 'COSIGN_PUB_FILE')
                 ]) {
                     sh """
-                        COSIGN_PASSWORD=$COSIGN_PASSWORD cosign sign --key $COSIGN_KEY_FILE ${IMAGE} | tee ${LOG_DIR}/cosign_sign.log
+                        COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key $COSIGN_KEY_FILE ${IMAGE} | tee ${LOG_DIR}/cosign_sign.log
                         cosign verify --key $COSIGN_PUB_FILE ${IMAGE} | tee ${LOG_DIR}/cosign_verify.log
                         cosign verify --key $COSIGN_PUB_FILE ${IMAGE_DIGEST} | tee ${LOG_DIR}/cosign_digest_verify.log
                     """
