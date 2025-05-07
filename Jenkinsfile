@@ -7,14 +7,12 @@ pipeline {
     }
 
     stages {
-        // Etapa de preparar logs
         stage('Preparar logs') {
             steps {
                 sh 'mkdir -p ${LOG_DIR}'
             }
         }
 
-        // Verificar si Docker está accesible
         stage('Verificar acceso a Docker') {
             steps {
                 script {
@@ -28,7 +26,6 @@ pipeline {
             }
         }
 
-        // Obtener digest de la imagen Docker
         stage('Obtener Digest') {
             steps {
                 script {
@@ -40,7 +37,6 @@ pipeline {
             }
         }
 
-        // Escanear la imagen con Trivy
         stage('Escanear con Trivy') {
             steps {
                 sh """
@@ -49,7 +45,6 @@ pipeline {
             }
         }
 
-        // Firmar y verificar imagen con Cosign
         stage('Firmar y Verificar con Cosign') {
             environment {
                 CONTRASENA_COSIGN = credentials('COSIGN_PASSWORD')
@@ -60,10 +55,8 @@ pipeline {
                     file(credentialsId: 'COSIGN_PUB', variable: 'COSIGN_PUB')
                 ]) {
                     script {
-                        // Obtener el digest de la imagen
                         def imageDigest = sh(script: "docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}", returnStdout: true).trim()
 
-                        // Usar el digest para la firma
                         sh """
                             COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key \$COSIGN_KEY ${imageDigest} | tee ${LOG_DIR}/cosign_sign.log
                             cosign verify --key \$COSIGN_PUB ${imageDigest} | tee ${LOG_DIR}/cosign_verify.log
@@ -73,7 +66,6 @@ pipeline {
             }
         }
 
-        // Desplegar imagen Docker
         stage('Desplegar Imagen en Docker') {
             steps {
                 sh '''
@@ -84,7 +76,6 @@ pipeline {
             }
         }
 
-        // Iniciar Minikube con Docker como driver
         stage('Iniciar Minikube con Docker') {
             steps {
                 sh '''
@@ -94,44 +85,60 @@ pipeline {
             }
         }
 
-        // Instalar Falco via Helm
         stage('Instalar Falco via Helm') {
             steps {
                 retry(3) {
-                    sh 'helm repo add falcosecurity https://falcosecurity.github.io/charts'
-                    sh 'helm repo update'
-                    // Agregar la opción --insecure-skip-tls-verify para evitar la validación TLS
-                    sh 'helm install --replace falco --namespace falco --create-namespace --set tty=true --insecure-skip-tls-verify falcosecurity/falco'
+                    sh '''
+                        helm uninstall falco --namespace falco || true
+                        helm repo add falcosecurity https://falcosecurity.github.io/charts || true
+                        helm repo update
+                        helm install falco --namespace falco --create-namespace --set tty=true --insecure-skip-tls-verify falcosecurity/falco
+                    '''
                 }
             }
         }
 
-        // Simular alerta Falco
+        stage('Esperar que Falco esté listo') {
+            steps {
+                sh '''
+                    echo "Esperando que Falco esté listo..."
+                    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=falco -n falco --timeout=90s || true
+                '''
+            }
+        }
+
         stage('Simular Alerta Falco') {
             steps {
-                sh 'echo "Simulando comportamiento sospechoso..."'
-                sh 'touch /bin/evil_script.sh || true'
+                sh '''
+                    echo "Simulando comportamiento sospechoso..."
+                    sudo touch /bin/evil_script.sh || true
+                '''
             }
         }
 
-        // Revisar logs de Falco
         stage('Revisar Logs Falco') {
             steps {
-                sh 'kubectl logs -l app=falco -n falco --tail=100'
+                sh '''
+                    echo "Obteniendo logs de Falco..."
+                    kubectl logs -l app.kubernetes.io/name=falco -n falco -c falco --tail=100 > ${LOG_DIR}/falco.log || echo "No se encontraron logs."
+                    grep Warning ${LOG_DIR}/falco.log || echo "No se encontraron alertas tipo Warning."
+                '''
             }
         }
 
-        // Archivar logs
         stage('Archivar Logs en Jenkins') {
             steps {
-                archiveArtifacts artifacts: "${LOG_DIR}/*.log", fingerprint: true
+                archiveArtifacts artifacts: "${LOG_DIR}/*.log", fingerprint: true, allowEmptyArchive: true
             }
         }
 
-        // Copiar logs a carpeta del servidor
         stage('Copiar logs a carpeta del servidor') {
             steps {
-                sh "cp -r ${LOG_DIR} /var/logs/jenkins_logs/"
+                sh '''
+                    echo "Copiando logs localmente..."
+                    sudo mkdir -p /var/logs/jenkins_logs/
+                    sudo cp -r ${LOG_DIR}/* /var/logs/jenkins_logs/
+                '''
             }
         }
     }
