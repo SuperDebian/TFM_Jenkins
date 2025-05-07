@@ -55,7 +55,7 @@ pipeline {
                     file(credentialsId: 'COSIGN_PUB', variable: 'COSIGN_PUB')
                 ]) {
                     sh """
-                        COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key $COSIGN_KEY_FILE ${IMAGE} | tee ${LOG_DIR}/cosign_sign.log
+                        COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key $COSIGN_KEY ${IMAGE} | tee ${LOG_DIR}/cosign_sign.log
                         cosign verify --key $COSIGN_PUB ${IMAGE} | tee ${LOG_DIR}/cosign_verify.log
                         cosign verify --key $COSIGN_PUB ${IMAGE_DIGEST} | tee ${LOG_DIR}/cosign_digest_verify.log
                     """
