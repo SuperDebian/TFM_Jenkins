@@ -84,6 +84,16 @@ pipeline {
             }
         }
 
+        // Iniciar Minikube con Docker como driver
+        stage('Iniciar Minikube con Docker') {
+            steps {
+                sh '''
+                    minikube start --driver=docker
+                    kubectl config use-context minikube
+                '''
+            }
+        }
+
         // Instalar Falco via Helm
         stage('Instalar Falco via Helm') {
             steps {
