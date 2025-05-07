@@ -50,7 +50,7 @@ pipeline {
                 CONTRASENA_COSIGN = credentials('COSIGN_PASSWORD')
             }
             steps {
-                withCredentials([
+                withCredentials([ 
                     file(credentialsId: 'COSIGN_KEY', variable: 'COSIGN_KEY'),
                     file(credentialsId: 'COSIGN_PUB', variable: 'COSIGN_PUB')
                 ]) {
@@ -63,18 +63,17 @@ pipeline {
             }
         }
 
-        stage('Iniciar Minikube') {
+        stage('Desplegar Imagen en Docker') {
             steps {
-                sh 'minikube start'
+                sh '''
+                    docker rm -f apache2-container || true
+                    docker pull $IMAGE_DIGEST
+                    docker run -d --name apache2-container -p 8081:80 $IMAGE_DIGEST
+                '''
             }
         }
 
-        stage('Desplegar Imagen en Kubernetes') {
-            steps {
-                sh "kubectl create deployment apache2 --image=${IMAGE_DIGEST}"
-            }
-        }
-
+        // Etapas de Falco
         stage('Instalar Falco via Helm') {
             steps {
                 sh 'helm repo add falcosecurity https://falcosecurity.github.io/charts'
@@ -93,6 +92,21 @@ pipeline {
         stage('Revisar Logs Falco') {
             steps {
                 sh 'kubectl logs -l app=falco -n falco --tail=100'
+            }
+        }
+
+        stage('Simular Alerta de Seguridad') {
+            steps {
+                sh '''
+                    echo "Simulando comportamiento sospechoso en contenedor..."
+                    docker exec apache2-container sh -c "touch /bin/evil_script.sh || true"
+                '''
+            }
+        }
+
+        stage('Revisar Logs del Contenedor') {
+            steps {
+                sh 'docker logs apache2-container --tail 100 | tee ${LOG_DIR}/docker_logs.log'
             }
         }
 
