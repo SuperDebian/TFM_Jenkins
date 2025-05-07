@@ -51,13 +51,13 @@ pipeline {
             }
             steps {
                 withCredentials([
-                    file(credentialsId: 'COSIGN_KEY_FILE', variable: 'COSIGN_KEY_FILE'),
-                    file(credentialsId: 'COSIGN_PUB_FILE', variable: 'COSIGN_PUB_FILE')
+                    file(credentialsId: 'COSIGN_KEY', variable: 'COSIGN_KEY'),
+                    file(credentialsId: 'COSIGN_PUB', variable: 'COSIGN_PUB')
                 ]) {
                     sh """
                         COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key $COSIGN_KEY_FILE ${IMAGE} | tee ${LOG_DIR}/cosign_sign.log
-                        cosign verify --key $COSIGN_PUB_FILE ${IMAGE} | tee ${LOG_DIR}/cosign_verify.log
-                        cosign verify --key $COSIGN_PUB_FILE ${IMAGE_DIGEST} | tee ${LOG_DIR}/cosign_digest_verify.log
+                        cosign verify --key $COSIGN_PUB ${IMAGE} | tee ${LOG_DIR}/cosign_verify.log
+                        cosign verify --key $COSIGN_PUB ${IMAGE_DIGEST} | tee ${LOG_DIR}/cosign_digest_verify.log
                     """
                 }
             }
