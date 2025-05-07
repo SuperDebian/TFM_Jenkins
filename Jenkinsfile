@@ -2,62 +2,108 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = 'my-wordpress'
-        IMAGE_TAG = 'latest'
-        DOCKER_REGISTRY = 'docker.io'
-        DOCKER_USER = 'mzaygar'
-        DOCKER_PASS = credentials('docker-password')
-        COSIGN_KEY = credentials('cosign-key')
-        WORDPRESS_IMAGE = 'wordpress:latest'
+        IMAGE = "mzaygar/apache2:latest"
+        LOG_DIR = "scan_logs"
     }
 
     stages {
-        stage('Pull WordPress Image') {
+        stage('Preparar logs') {
+            steps {
+                sh 'mkdir -p $LOG_DIR'
+            }
+        }
+
+        stage('Obtener Digest') {
             steps {
                 script {
-                    // Obtener la imagen de WordPress
-                    sh "docker pull ${WORDPRESS_IMAGE}"
+                    def digest = sh(
+                        script: "docker pull $IMAGE > /dev/null && docker inspect --format='{{index .RepoDigests 0}}' $IMAGE",
+                        returnStdout: true
+                    ).trim()
+                    echo "Digest obtenido: ${digest}"
+                    env.DIGEST = digest
                 }
             }
         }
 
-        stage('Scan with Trivy') {
+        stage('Escanear con Trivy') {
             steps {
-                script {
-                    // Escanear la imagen con Trivy
-                    sh "trivy image ${WORDPRESS_IMAGE}"
+                sh 'trivy image --scanners vuln --vuln-type os --severity CRITICAL,HIGH $IMAGE | tee $LOG_DIR/trivy_scan.log'
+            }
+        }
+
+        stage('Firmar y Verificar con Cosign') {
+            steps {
+                withCredentials([ 
+                    file(credentialsId: 'COSIGN_KEY', variable: 'COSIGN_KEY_FILE'),
+                    file(credentialsId: 'COSIGN_PUB', variable: 'COSIGN_PUB_FILE')
+                ]) {
+                    sh '''
+                        cosign sign -key $COSIGN_KEY_FILE $IMAGE | tee $LOG_DIR/cosign_sign.log
+                        cosign verify --key $COSIGN_PUB_FILE $IMAGE | tee $LOG_DIR/cosign_verify.log
+                        cosign verify --key $COSIGN_PUB_FILE $DIGEST | tee $LOG_DIR/cosign_digest_verify.log
+                    '''
                 }
             }
         }
 
-        stage('Sign Image with Cosign') {
+        stage('Desplegar Imagen en Kubernetes') {
             steps {
                 script {
-                    // Firmar la imagen con Cosign
-                    sh "cosign sign --key ${COSIGN_KEY} ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+                    // Crear el deployment en Kubernetes con el digest de la imagen
+                    sh "kubectl create deployment apache2 --image=$DIGEST"
+
+                    // Exponer el deployment como un servicio de tipo NodePort
+                    sh "kubectl expose deployment apache2 --type=NodePort --port=80"
+
+                    // Esperar un poco para asegurarse de que el servicio esté disponible
+                    sleep(10)
+
+                    // Obtener la URL del servicio expuesto
+                    def service_url = sh(script: 'minikube service apache2 --url', returnStdout: true).trim()
+                    echo "Servicio expuesto en: ${service_url}"
                 }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Instalar Falco via Helm') {
             steps {
-                script {
-                    // Login a Docker y subir la imagen
-                    sh """
-                        echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
-                        docker tag ${WORDPRESS_IMAGE} ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
-                        docker push ${DOCKER_REGISTRY}/${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
-                    """
-                }
+                sh '''
+                    minikube start
+                    helm repo add falcosecurity https://falcosecurity.github.io/charts
+                    helm repo update
+                    helm install --replace falco --namespace falco --create-namespace --set tty=true falcosecurity/falco
+                    kubectl wait pods --for=condition=Ready --all -n falco --timeout=120s
+                '''
             }
         }
-    }
 
-    post {
-        always {
-            script {
-                // Limpiar los contenedores de Docker y liberar espacio
-                sh 'docker system prune -f'
+        stage('Simular Alerta Falco') {
+            steps {
+                sh '''
+                    kubectl create deployment nginx --image=nginx
+                    sleep 10
+                    POD=$(kubectl get pods --selector=app=nginx -o jsonpath="{.items[0].metadata.name}")
+                    kubectl exec -it $POD -- cat /etc/shadow || true
+                '''
+            }
+        }
+
+        stage('Revisar Logs Falco') {
+            steps {
+                sh 'kubectl logs -l app.kubernetes.io/name=falco -n falco -c falco | grep Warning | tee $LOG_DIR/falco_warnings.log || true'
+            }
+        }
+
+        stage('Archivar Logs en Jenkins') {
+            steps {
+                archiveArtifacts artifacts: "$LOG_DIR/*.log", fingerprint: true
+            }
+        }
+
+        stage('Copiar logs a carpeta del servidor') {
+            steps {
+                sh 'mkdir -p /var/log/falco_logs && cp $LOG_DIR/*.log /var/log/falco_logs/'
             }
         }
     }
