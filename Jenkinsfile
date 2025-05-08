@@ -40,7 +40,7 @@ pipeline {
         stage('Escanear con Trivy') {
             steps {
                 sh """
-                    trivy image --scanners vuln --vuln-type os --severity CRITICAL,HIGH ${IMAGE} | tee ${LOG_DIR}/trivy_scan.log
+                    trivy image --scanners vuln --vuln-type os --severity CRITICAL,HIGH,MEDIUM,LOW ${IMAGE} | tee ${LOG_DIR}/trivy_scan.log
                 """
             }
         }
