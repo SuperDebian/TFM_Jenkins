@@ -58,7 +58,8 @@ pipeline {
                         def imageDigest = sh(script: "docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}", returnStdout: true).trim()
 
                         sh """
-                            COSIGN_PASSWORD=$CONTRASENA_COSIGN cosign sign --key \$COSIGN_KEY ${imageDigest} | tee ${LOG_DIR}/cosign_sign.log
+                            export COSIGN_PASSWORD=\$CONTRASENA_COSIGN
+                            cosign sign --yes --key \$COSIGN_KEY ${imageDigest} | tee ${LOG_DIR}/cosign_sign.log
                             cosign verify --key \$COSIGN_PUB ${imageDigest} | tee ${LOG_DIR}/cosign_verify.log
                         """
                     }
